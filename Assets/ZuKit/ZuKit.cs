@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using UnityEngine;
 using UnityEngine.Experimental.LowLevel;
@@ -17,9 +18,11 @@ namespace ZuKitCore
         // ZuKey = パラメータ名 + タグ集
         // object = value
         public readonly (ZuKey, object)[] values;
+        public readonly string dateTime;
         public ZuValues(params (ZuKey, object)[] values)
         {
             this.values = values;
+            this.dateTime = "" + (Int32)(DateTime.UtcNow.Subtract(new DateTime(1970, 1, 1))).TotalSeconds;//DateTime.UnixEpoch();////"" + System.Xml.XmlConvert.ToString(DateTime.Now, System.Xml.XmlDateTimeSerializationMode.Utc);//DateTime.UtcNow.Ticks;//ToString("yyyy-MM-ddTHH\\:mm\\:ssZ");
         }
     }
 
@@ -27,8 +30,8 @@ namespace ZuKitCore
     // リクエスト時に自動的にinfluxdb構文に変形される。
     public class ZuKey
     {
-        private string parameterName;
-        private (string, object)[] tagValues;
+        public readonly string parameterName;
+        public readonly (string, object)[] tagValues;
 
         public ZuKey(string parameterName, params (string, object)[] tagValues)
         {
@@ -71,15 +74,16 @@ namespace ZuKitCore
         private Func<ZuValues> onUpdateValues;
         private string influxdbUrl;
         private string dbName;
+        private string writeHeader;
 
         private ConcurrentQueue<ZuValues> queue = new ConcurrentQueue<ZuValues>();
 
         private ZuKit(string influxdbUrl, string dbName, Func<ZuValues> onUpdateValues)
         {
-            Debug.Log("起動、いろいろ用意しよう。 influxdbUrl:" + influxdbUrl + " dbName:" + dbName);
             this.onUpdateValues = onUpdateValues;
             this.influxdbUrl = influxdbUrl;
             this.dbName = dbName;
+            this.writeHeader = influxdbUrl + "/write?db=" + dbName;
 
             // 初期リクエストをセット
             requestEnum = ConnectionRequest(influxdbUrl, dbName);
@@ -110,9 +114,7 @@ namespace ZuKitCore
 
         private IEnumerator ConnectionRequest(string influxdbUrl, string dbName)
         {
-            var request = new Request(influxdbUrl + "/query" + Uri.EscapeUriString("?q=CREATE DATABASE " + dbName));
-
-            var req = UnityWebRequest.Post(request.reqStr, string.Empty);
+            var req = UnityWebRequest.Post(influxdbUrl + "/query" + Uri.EscapeUriString("?q=CREATE DATABASE " + dbName), string.Empty);
             req.SetRequestHeader("Content-Type", "application/x-www-form-urlencoded");
             req.SendWebRequest();
 
@@ -130,8 +132,6 @@ namespace ZuKitCore
             Debug.Log("succeeded to create db or already exists.");
         }
 
-
-        private bool done = false;
         private IEnumerator requestEnum;
         private StringBuilder stringBuilder = new StringBuilder();
         private void OnZuKitUpdate()
@@ -140,9 +140,9 @@ namespace ZuKitCore
             var values = onUpdateValues();
             if (0 < values.values.Length)
             {
-                if (!done)
+                var count = values.values.Length;
+                for (var i = 0; i < count; i++)
                 {
-                    done = true;
                     queue.Enqueue(values);
                 }
             }
@@ -163,29 +163,24 @@ namespace ZuKitCore
 
         private IEnumerator ConstructInfluxDBWrite()
         {
-            stringBuilder.Clear();
-
-            stringBuilder.Append(influxdbUrl);
-            stringBuilder.Append("/write" + Uri.EscapeUriString("?db=" + dbName));
-
             var count = queue.Count;
             ZuValues vals;
 
-            string data = string.Empty;
+            stringBuilder.Clear();
             // 今回の取り出しで存在する件数を送り出す
             for (var i = 0; i < count; i++)
             {
                 queue.TryDequeue(out vals);
 
-                // リクエストを合成して投げる、ここが一番頑張るところ
-                data = ValuesToInfluxDBString(vals, DateTime.UtcNow);
+                // 一回のpull単位でまとまっているデータを同じタイムスタンプで整形する。
+                ValuesToInfluxDBString(vals);
             }
 
-            var rStr = stringBuilder.ToString();
-            Debug.Log("rStr:" + rStr + " data:" + data);
+            var baseStr = stringBuilder.ToString();
+            var rStr = baseStr.Substring(0, baseStr.Length - 1);
 
-            var req = new UnityWebRequest("http://localhost:8086/write?db=myZuDB");
-            req.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes("key value=0.67\nk2 value=2.0"));
+            var req = new UnityWebRequest(writeHeader);
+            req.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(rStr));
             req.method = UnityWebRequest.kHttpVerbPOST;
             req.SetRequestHeader("Content-Type", "application/x-www-form-urlencoded");
             req.SendWebRequest();
@@ -195,28 +190,30 @@ namespace ZuKitCore
                 yield return null;
             }
 
-            // Debug.Log("req:" + req.isHttpError + " net:" + req.isNetworkError + " err:" + req.error + " code:" + req.responseCode);
-            // foreach (var r in req.GetResponseHeaders())
+            // foreach (var item in req.GetResponseHeaders())
             // {
-            //     Debug.Log("k:" + r.Key + " v:" + r.Value);
+            //     Debug.Log("item:" + item.Key + " v:" + item.Value);
             // }
         }
 
-        private string ValuesToInfluxDBString(ZuValues sameTimingValues, DateTime utcNow)
+        private void ValuesToInfluxDBString(ZuValues sameTimingValues)
         {
-            return "key,kind=2 value=0.67";
+            // var utcStr = sameTimingValues.dateTime;
+            // Debug.Log("utcStr:" + utcStr);
+            foreach (var val in sameTimingValues.values)
+            {
+                var zuVal = val.Item1;
+                var paramName = zuVal.parameterName;
+
+                if (0 < zuVal.tagValues.Length)
+                {
+                    var tagValues = zuVal.tagValues.Select(t => t.Item1 + "=" + t.Item2).ToArray();
+                    stringBuilder.AppendLine(paramName + "," + string.Join(",", tagValues) + " value=" + val.Item2);// + " " + utcStr
+                    continue;
+                }
+
+                stringBuilder.AppendLine(paramName + " value=" + val.Item2);// + " " + utcStr
+            }
         }
     }
-
-    public struct Request
-    {
-        public readonly string reqStr;
-
-        public Request(string v)
-        {
-            this.reqStr = v;
-        }
-    }
-
-
 }

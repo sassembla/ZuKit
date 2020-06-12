@@ -1,6 +1,4 @@
-﻿using System.Collections;
-using System.Collections.Generic;
-using UnityEngine;
+﻿using UnityEngine;
 using ZuKitCore;
 
 public class ZuKitSample : MonoBehaviour
@@ -14,8 +12,8 @@ public class ZuKitSample : MonoBehaviour
             () =>
             {
                 return new ZuValues(
-                    (new ZuKey("key", ("index", 0), ("temp", 1)), 1),
-                    (new ZuKey("key", ("index", 1), ("temp", 2)), 2)
+                    (new ZuKey("key", ("index", 0), ("temp", 1)), Time.frameCount),
+                    (new ZuKey("key", ("index", 1), ("temp", 2)), Random.Range(-100 * Time.frameCount, 100 * Time.frameCount))
                 );
             }
         );
