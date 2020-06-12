@@ -5,3 +5,4 @@ Zukit.sln
 Assembly-CSharp.csproj
 .vscode/*
 obj/*
+.DS_Store
