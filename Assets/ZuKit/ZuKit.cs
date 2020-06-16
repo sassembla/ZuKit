@@ -82,6 +82,7 @@ namespace ZuKitCore
             {
                 case ZuKitState.Running:
                     state = ZuKitState.Stopped;
+                    _this.Dispose();
                     break;
                 default:
                     Debug.LogError("二度目以降のteardownが行われていて、これは禁止したり意味があるなら何かする。 state:" + state);
