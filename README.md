@@ -8,6 +8,7 @@ send unity editor data to InfluxDB.
 ## usage
 
 ```csharp
+// start sending data to influxdb.
 void Start()
 {
     ZuKit.Setup(
@@ -21,6 +22,13 @@ void Start()
             );
         }
     );
+}
+
+
+// it's good idea to stop sending when your app closed.
+void OnApplicationQuit()
+{
+    ZuKit.Teardown();
 }
 ```
 
