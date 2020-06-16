@@ -3,7 +3,6 @@ using ZuKitCore;
 
 public class ZuKitSample : MonoBehaviour
 {
-    // Start is called before the first frame update
     void Start()
     {
         ZuKit.Setup(
@@ -19,9 +18,8 @@ public class ZuKitSample : MonoBehaviour
         );
     }
 
-    // Update is called once per frame
-    void Update()
+    void OnApplicationQuit()
     {
-
+        ZuKit.Teardown();
     }
 }
