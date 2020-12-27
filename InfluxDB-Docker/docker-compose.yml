@@ -1,0 +1,23 @@
+version: '3.1'
+services:
+  influxdb:
+    container_name: influxdb
+    image: influxdb
+    ports:
+      - "8086:8086"
+    volumes:
+      - influxdb:/var/lib/influxdb
+
+  chronograf:
+    container_name: chronograf
+    image: chronograf
+    ports:
+      - "8888:8888"
+    links:
+      - influxdb
+    volumes:
+      - chronograf:/var/lib/chronograf
+
+volumes:
+  influxdb:
+  chronograf:
